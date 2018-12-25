@@ -1,0 +1,14 @@
+import React from 'react';
+import {{capitalize name}} from '.';
+import { shallow } from 'enzyme';
+import { create } from 'react-test-renderer';
+
+describe('<{{capitalize name}} />', () => {
+
+  it('Should create {{capitalize name}} Component', () => {
+    const component = create(< {{capitalize name}} />)
+    const tree = component.toJSON()
+    expect(tree).toMatchSnapshot()
+  });
+
+});

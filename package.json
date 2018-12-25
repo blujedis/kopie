@@ -1,0 +1,36 @@
+{
+  "name": "kopie",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "bin": {
+    "kopie": "./bin/kopie",
+    "ko": "./bin/kopie"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dot-prop": "^4.2.0",
+    "fast-glob": "^2.2.4",
+    "fs-extra": "^7.0.1",
+    "handlebars": "^4.0.12",
+    "handlebars-helpers": "^0.10.0",
+    "kawkah-parser": "^1.0.0",
+    "log-symbols": "^2.2.0",
+    "ora": "^3.0.0",
+    "tablur": "^1.2.1"
+  },
+  "devDependencies": {
+    "@types/dot-prop": "^4.2.0",
+    "@types/fs-extra": "^5.0.4",
+    "@types/handlebars": "^4.0.40",
+    "@types/log-symbols": "^2.0.0",
+    "@types/ora": "^1.3.4"
+  },
+  "kopie": {
+    "path": "./seed"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "root": "src",
+  "allowAbsolute": false,
+  "allowCopy": true,
+  "allowPurge": true,
+  "allowAliases": true,
+  "allowExtends": true,
+  "aliases": {},
+  "generators": {
+    "page": {
+      "action": "default",
+      "base": "pages",
+      "defaults": {
+        "args": [],
+        "props": {
+          "name": "MyComponent"
+        }
+      },
+      "required": {
+        "args": [
+          "dest"
+        ],
+        "props": [
+          "name"
+        ]
+      }
+    }
+  }
+}
