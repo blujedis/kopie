@@ -91,7 +91,8 @@ else {
       const value = args._[2];
 
       if (args.purge) {
-        log();
+        if (!action)
+          log();
         kopie.syncGenerators(args.purge);
         if (!action)
           process.exit();

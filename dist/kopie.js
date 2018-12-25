@@ -255,12 +255,18 @@ function inspectGenerators(purge) {
     const tmp = { name: key };
     conf = { ...tmp, ...conf };
 
+    if (conf.name !== key)
+      conf.name = key;
+
     if (purge && !conf.isStatic && (!existsSync(path) || invalidKey)) {
 
       let msg = `Removed generator "${key}" path does NOT exist`;
 
       if (invalidKey)
         msg = `Removed generator "${key}" unsuppored key name`;
+
+      if (config.aliases[key])
+        delete config.aliases[key];
 
       delete config.generators[key];
 
@@ -273,6 +279,22 @@ function inspectGenerators(purge) {
     }
 
   });
+
+  if (purge) {
+
+    const aliasKeys = Object.keys(config.aliases);
+
+    // Purge aliases
+    aliasKeys.forEach(k => {
+
+      const val = config.aliases[k];
+
+      if (!~genKeys.indexOf(val))
+        delete config.aliases[k];
+
+    });
+
+  }
 
   return removed;
 

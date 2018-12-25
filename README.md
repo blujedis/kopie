@@ -67,9 +67,9 @@ Here below **dest** within required.args ensures that you provide a destination 
 
 ## Actions
 
-In your ./.kopie/actions folder are the default actions Kopie ships with, see **index.js**. Your generator config allows you to specify an action to be used to generate your template. Many use cases can be satisfied with the **defaultGenerator** action.
+In your ./.kopie/actions folder are the default actions Kopie ships with, see **index.js**. Your generator config allows you to specify an action to be used to generate your template. Many use cases can be satisfied with the **defaultAction** action.
 
-You'll notice also an **advancedGenerator** method in actions.js. This shows you the workflow of how Kopie handles rendering templates by default.
+You'll notice also an **advancedAction** method in actions.js. This shows you the workflow of how Kopie handles rendering templates by default.
 
 To create some custom task simple create and export a new generator function that fits the work flow you need. 
 
