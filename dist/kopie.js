@@ -9,7 +9,6 @@ const { relative, join, parse, resolve } = require('path');
 const readline = require('readline');
 const { writeFileSync, writeFile, copySync, existsSync,
   readFileSync, ensureDirSync, readdirSync } = require('fs-extra');
-const { inspect } = require('util');
 const glob = require('fast-glob').sync;
 const log = require('./logger')();
 
@@ -38,7 +37,7 @@ const api = {
   aliasToKey,
   toNormalKey,
   fromNormalKey,
-  normalizeConfig,
+  extendConfig,
   config,
   loadBlueprints,
   addGenerators,
@@ -176,33 +175,27 @@ function fromNormalKey(name) {
 }
 
 /**
- * Normalizes generator config ensuring default properties.
+ * Extends generator config ensuring.
  * 
- * @param {object} conf generator configuration object.
- * @param {object} defaults optional default configuration.
+ * @param {object} target generator configuration object.
+ * @param {object} source exting config or values to overwrite target with.
  * 
  * @returns {GeneratorConfig}
  */
-function normalizeConfig(conf, defaults) {
+function extendConfig(target, source) {
 
-  defaults = defaults || {
-    action: 'default',
-    isDirectory: false,
-    allowCopy: true
-  };
+  source = source || {};
 
-  conf = conf || {};
+  let srcDefs = source.defaults || {};
+  let srcReqs = source.required || {};
 
-  let confDefs = conf.defaults || {};
-  let confReqs = conf.required || {};
+  const targetDefs = { args: [], options: {}, props: {} };
+  const targetReqs = { args: [], options: [], props: [] };
 
-  const defDefs = { args: [], options: {}, props: {} };
-  const defReqs = { args: [], options: [], props: [] };
+  srcDefs = { ...targetDefs, ...srcDefs };
+  srcReqs = { ...targetReqs, ...srcReqs };
 
-  confDefs = { ...defDefs, ...confDefs };
-  confReqs = { ...defReqs, ...confReqs };
-
-  return { ...defaults, ...conf, ...{ defaults: confDefs }, ...{ required: confReqs } };
+  return { ...target, ...source, ...{ defaults: srcDefs }, ...{ required: srcReqs } };
 
 }
 
@@ -259,9 +252,10 @@ function inspectGenerators(purge) {
 
     // Ensure required keys.
     let conf = config.generators[key];
-    conf = { ...{ name: key, isDirectory: !hasExt, action: 'default' }, ...conf };
+    const tmp = { name: key };
+    conf = { ...tmp, ...conf };
 
-    if (purge && (!existsSync(path) || invalidKey)) {
+    if (purge && !conf.isStatic && (!existsSync(path) || invalidKey)) {
 
       let msg = `Removed generator "${key}" path does NOT exist`;
 
@@ -310,9 +304,10 @@ function addGenerator(name, conf) {
   let key = name.replace(extExp, '');
   let normalKey = toNormalKey(key);
 
-  conf = { ...defaults, ...conf };
+  conf = extendConfig(defaults, conf);
   conf.name = normalKey;
-  conf.isDirectory = !hasTplExt;
+  if (!conf.isStatic)
+    conf.isDirectory = !hasTplExt;
 
   // Key was normalized from dot notation.
   if (normalKey !== key) {
@@ -455,16 +450,16 @@ function loadGenerator(name, conf) {
 
   if (!gen) return;
 
-  gen = normalizeConfig(gen);
+  conf = extendConfig(gen, conf);
 
-  if (gen.extends && config.allowExtends) {
-    const extendConf = config.generators[gen.extends];
-    gen = { ...extendConf, ...gen };
+  if (conf.extends && config.allowExtends) {
+    const tmpConf = config.generators[conf.extends];
+    // Omit unneeded keys from parent config.
+    const { name, isStatic, ...extendConf } = tmpConf;
+    conf = extendConfig(conf, extendConf);
   }
 
   let confPath;
-
-  conf = { ...gen, ...conf };
 
   confPath = join(PATHS.blueprints, name, 'config.json');
 

@@ -1,6 +1,8 @@
 # Kopie
 
-Simple scaffolding utility using Handlebars for compiling templates.
+Simple scaffolding utility using Handlebars for compiling templates. This is used internally, no tests currently it works but use at own risk. 
+
+But hey you're only generating templates so probably no big whoop.
 
 ## Installing
 
@@ -63,5 +65,15 @@ Here below **dest** within required.args ensures that you provide a destination 
 }
 ```
 
+## Actions
 
+In your ./.kopie/actions folder are the default actions Kopie ships with, see **index.js**. Your generator config allows you to specify an action to be used to generate your template. Many use cases can be satisfied with the **defaultGenerator** action.
+
+You'll notice also an **advancedGenerator** method in actions.js. This shows you the workflow of how Kopie handles rendering templates by default.
+
+To create some custom task simple create and export a new generator function that fits the work flow you need. 
+
+## What's Next
+
+As time permits more examples of more advanced configurations, for features adds etc. Again all about time.
 

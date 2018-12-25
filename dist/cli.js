@@ -2,7 +2,7 @@
 const kopie = require('./kopie');
 const kawkah = require('kawkah-parser');
 const dp = require('dot-prop');
-const { ALIASES, OPTIONS, COMMANDS, PATHS } = require('./constants');
+const { ALIASES, OPTIONS, COMMANDS, PATHS, BIN } = require('./constants');
 const { existsSync } = require('fs-extra');
 const { inspect } = require('util');
 const initHelp = require('./help');
@@ -30,7 +30,7 @@ if (knownCmd) {
 
 // Ensure we have a valid config.
 if (!kopie.config && cmd !== 'init')
-  log.error(`\nMissing config try running "${kopie.NAME_LOWER} init"\n`).exit(1);
+  log.error(`\nMissing config try running "${BIN} init"\n`).exit(1);
 
 if (cmd === 'init') {
   kopie.init(args.force);
@@ -118,7 +118,8 @@ else {
       switch (action) {
 
         case 'show':
-          log();
+          if (args.purge)
+            log();
           log(config);
           log();
           break;
