@@ -187,7 +187,7 @@ else {
           .error(`Action for generator "${conf.name}" could not be found, ensure exists in actions.js`)
           .exit(1);
 
-      const defs = conf.defaults;
+      const defs = conf.defaults || {};
       const clone = { ...defs };
       delete clone.args; // we need to convert this from args: [] to _: [];
 

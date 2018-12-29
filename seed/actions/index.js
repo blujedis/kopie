@@ -14,6 +14,10 @@ module.exports = function (kopie) {
     // Determine our destination.
     let dest = kopie.normalizeDest(conf, args._[0]);
 
+    // When prop.name is required use last segment
+    // in path when no default is provided.
+    args = kopie.pathToPropName(conf, args);
+
     kopie.render(conf, args, dest);
 
   }
@@ -22,6 +26,10 @@ module.exports = function (kopie) {
 
     // Determine our destination.
     let dest = kopie.normalizeDest(conf, args._[0]);
+
+    // When prop.name is required use last segment
+    // in path when no default is provided.
+    args = kopie.pathToPropName(conf, args);
 
     // Validate the generator.
     const validator = kopie.validateGenerator(conf, args);
@@ -48,6 +56,7 @@ module.exports = function (kopie) {
 
   return {
     default: defaultAction,
+    advanced: advancedAction,
     noop
   };
 

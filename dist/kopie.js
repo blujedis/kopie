@@ -42,6 +42,7 @@ const api = {
   toNormalKey,
   fromNormalKey,
   extendConfig,
+  pathToPropName,
   config,
   loadBlueprints,
   addGenerators,
@@ -204,6 +205,38 @@ function extendConfig(target, source) {
 }
 
 /**
+ * Checks if props.name is required, if missing attempts to convert the
+ * path directory name to prop.name.
+ * 
+ * @param {GeneratorConfig} conf the generator's config.
+ * @param {object} args parsed cli args.
+ * 
+ * @returns {object}
+ */
+function pathToPropName(conf, args) {
+
+  const defaults = {
+    required: { props: [] },
+    defaults: { props: {} }
+  };
+
+  args.props = args.props || {};
+  conf = extendConfig(defaults, conf);
+
+  if (~conf.required.props.indexOf('name') && !args.props.name && !conf.defaults.props.name) {
+
+    const name = parse(args._[0]).name;
+
+    if (name)
+      args.props.name = name;
+
+  }
+
+  return args;
+
+}
+
+/**
  * Uses glob pattern to load each blueprint
  * in blueprints directory.
  */
@@ -331,6 +364,7 @@ function addGenerator(name, conf) {
   let normalKey = toNormalKey(key);
 
   conf = extendConfig(defaults, conf);
+
   conf.name = normalKey;
   if (!conf.isStatic)
     conf.isDirectory = !hasTplExt;
