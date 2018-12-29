@@ -25,6 +25,10 @@ if (existsSync(PATHS.config)) {
 
 extExp = new RegExp(ext + '$');
 
+function isObject(item) {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
 const api = {
   PKG,
   NAME,
@@ -183,20 +187,20 @@ function fromNormalKey(name) {
  * @returns {GeneratorConfig}
  */
 function extendConfig(target, source) {
-
-  source = source || {};
-
-  let srcDefs = source.defaults || {};
-  let srcReqs = source.required || {};
-
-  const targetDefs = { args: [], options: {}, props: {} };
-  const targetReqs = { args: [], options: [], props: [] };
-
-  srcDefs = { ...targetDefs, ...srcDefs };
-  srcReqs = { ...targetReqs, ...srcReqs };
-
-  return { ...target, ...source, ...{ defaults: srcDefs }, ...{ required: srcReqs } };
-
+  let output = Object.assign({}, target);
+  if (isObject(target) && isObject(source)) {
+    Object.keys(source).forEach(key => {
+      if (isObject(source[key])) {
+        if (!(key in target))
+          Object.assign(output, { [key]: source[key] });
+        else
+          output[key] = extendConfig(target[key], source[key]);
+      } else {
+        Object.assign(output, { [key]: source[key] });
+      }
+    });
+  }
+  return output;
 }
 
 /**
@@ -471,6 +475,7 @@ function loadGenerator(name, conf) {
   let gen = config.generators[name];
 
   if (!gen) return;
+
 
   conf = extendConfig(gen, conf);
 
