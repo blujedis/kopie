@@ -10,7 +10,17 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "keywords": [
+    "copy",
+    "scaffold",
+    "yeoman",
+    "generator",
+    "templates",
+    "handlebars",
+    "jade",
+    "ejs"
+  ],
+  "author": "Blujeds <blujedicorp@gmail.com>",
   "license": "MIT",
   "dependencies": {
     "dot-prop": "^4.2.0",
