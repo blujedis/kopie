@@ -40,6 +40,7 @@ module.exports = function initHelp(kopie) {
   const helpOpts = ['--help', ...toFlags(OPTIONS.help.alias)].join(', ');
   const forceOpts = ['--force', ...toFlags(OPTIONS.force.alias)].join(', ');
   const purgeOpts = ['--purge', ...toFlags(OPTIONS.purge.alias)].join(', ');
+  const silentOpts = ['--silent', ...toFlags(OPTIONS.silent.alias)].join(', ');
 
   function show(key) {
 
@@ -70,6 +71,7 @@ module.exports = function initHelp(kopie) {
           .row([helpOpts, `--help or <command> --help`], { indent: 2 })
           .row([purgeOpts, `purges unknown generators`], { indent: 2 })
           .row([forceOpts, `forces command action`], { indent: 2 })
+          .row([silentOpts, `suppresses confirm previews`], { indent: 2 })
           .row();
 
         table.render();

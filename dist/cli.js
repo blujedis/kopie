@@ -189,7 +189,7 @@ else {
 
       const defs = conf.defaults || {};
       const clone = { ...defs };
-      delete clone.args; // we need to convert this from args: [] to _: [];
+      delete clone.args;
 
       let merged = { ...clone, ...args };
 

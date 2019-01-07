@@ -15,7 +15,8 @@ const PATHS = {
   kopie: KOPIE_PATH,
   actions: join(KOPIE_PATH, 'actions'),
   config: join(KOPIE_PATH, 'config.json'),
-  blueprints: join(KOPIE_PATH, 'blueprints')
+  blueprints: join(KOPIE_PATH, 'blueprints'),
+  backups: join(KOPIE_PATH, 'backups')
 };
 
 const COMMANDS = {
@@ -45,6 +46,10 @@ const OPTIONS = {
   purge: {
     type: 'boolean',
     alias: ['-p']
+  },
+  silent: {                // when present don't prompt for inject previews.
+    type: 'boolean',
+    alias: ['-s']
   }
 };
 

@@ -2,12 +2,14 @@
 
 module.exports = function (kopie) {
 
-  ///////////////////////////////////////////
-  // HELPERS
+
   const config = kopie.config;
   const log = kopie.log;
   const noop = (conf => log.info(`Generator "${conf.name}" set to no operation action`));
-  ///////////////////////////////////////////
+
+  // ACTIONS 
+  // ----------------------------------------------- //
+
 
   function defaultAction(conf, args) {
 

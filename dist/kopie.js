@@ -36,6 +36,8 @@ const api = {
   BIN,
   CWD,
   PATHS,
+  Tablur,
+  Handlebars,
   log,
   init,
   aliasToKey,
@@ -72,14 +74,19 @@ const api = {
 
 /**
 * Generator config defaults.
-
+*
 * @typedef {{ args: string[], options: {}, props: {} }} GeneratorConfigDefaults
 */
 
 /**
+ * 
+ * @typedef {{ [key: string]: InjectConfig }} InjectConfigs
+ */
+
+/**
  * Generator config object.
  * 
- * @typedef {{ description: string, action: string, base: string, isDirectory: boolean, allowCopy: boolean, defaults: GeneratorConfigDefaults, required: GeneratorConfigRequired }} GeneratorConfig
+ * @typedef {{ name: string, description: string, action: string, base: string, isDirectory: boolean, allowCopy: boolean, defaults: GeneratorConfigDefaults, required: GeneratorConfigRequired, injects: InjectConfigs }} GeneratorConfig
  */
 
 /**
@@ -92,6 +99,31 @@ const api = {
  * 
  * @typedef {{root: string, base: string, template: string, compiled: string, src: string, dest: string, srcRel: string, destRel: string, isAbsolute: boolean}} TemplateMapItem
  */
+
+/**
+ * 
+ * @typedef {{ before: string[], after: string[], chunks: [], startIdx: number, endIdx: number, endEmpty: boolean}} InjectChunks 
+ */
+
+/**
+ * Inject action configuration object.
+ * 
+ * @typedef {{ start: string | RegExp, end: string | RegExp | null, strategy: 'beforeStart' | 'beforeEnd' | 'afterStart', 'afterEnd', 'replace', templates: string | string[], props: object }} InjectAction
+ */
+
+/**
+ * Inject configuration object.
+ * 
+ * @typedef {{ target: string, actions: InjectAction[] }} InjectConfig
+ */
+
+// Handlebars Helpers 
+// --------------------------------------------- //
+
+Handlebars.registerHelper('relativeToParent', function (parent, child) {
+  return relative(parent, child);
+});
+
 
 /**
  * Creates stream reader prompt using Node's readline lib.
@@ -613,15 +645,17 @@ function validateGenerator(conf, args, report = false, exit = false) {
  */
 function normalizeDest(conf, dest) {
 
+  const nameExt = conf.name.split('-')[1];
+
   if (!conf.isDirectory && !dest)
-    dest = conf.name;
+    dest = conf.name.replace(/-.+$/, '.' + nameExt);
+
+  const parsed = parse(dest || '');
+
+  if (!parsed.ext && !conf.isDirectory && !/\..+$/.test(dest))
+    dest += ('.' + nameExt);
 
   if (!dest) return '';
-
-  const parsed = parse(dest);
-
-  if (!parsed.ext && !conf.isDirectory)
-    dest = join(dest, conf.name);
 
   return dest;
 
@@ -689,10 +723,10 @@ function loadCopyFiles(base, path) {
 /**
  * Creates map of source and destination for rendering template(s) to file.
  * 
- * @param {object} conf generator configuration object.
+ * @param {GeneratorConfig} conf generator configuration object.
  * @param {string} dest the destination directory or file path.
  * 
- * @returns {{files: TemplateMapItem[], copyFiles: CopyMapItem[] }[]}
+ * @returns {{name: string, files: TemplateMapItem[], copyFiles: CopyMapItem[] }}
  */
 function resolveTemplateMap(conf, dest) {
 
@@ -704,6 +738,8 @@ function resolveTemplateMap(conf, dest) {
 
   // Get resolved base route.
   dest = resolveDest(conf.base, dest);
+
+  const defaultName = parse(dest).name;
 
   conf.files = conf.files || [];
   conf.copyFiles = conf.copyFiles || [];
@@ -759,6 +795,7 @@ function resolveTemplateMap(conf, dest) {
   });
 
   return {
+    name: defaultName,
     files: conf.files,
     copyFiles: conf.copyFiles
   };
@@ -838,6 +875,7 @@ function renderTemplate(template, dest, force) {
   }
 
   try {
+    backup(dest);
     writeToFile(dest, template);
     return true;
   }
@@ -895,6 +933,7 @@ function copyFile(src, dest, force) {
   }
 
   try {
+    backup(src);
     copySync(src, dest);
     return true;
   }
@@ -967,7 +1006,7 @@ function renderPreview(renderMap) {
 /**
  * Verifies and prompts before render and write of templates.
  * 
- * @param {object} conf generator configuration object.
+ * @param {GeneratorConfig} conf generator configuration object.
  * @param {object} args object of parsed args, options and context props.
  * @param {string} dest path to output destination.
  * @param {function} done callback on render complete.
@@ -985,11 +1024,15 @@ function render(conf, args, dest, done) {
 
   const list = '\n' + renderPreview(renderMap) + '\n';
 
-  // const files = conf.files.map(f => '  ' + relative(CWD, f)).join('\n');
+  function finish() {
+    log();
+    if (done) done();
+    process.exit();
+  }
 
   rl.question(`\nRender Preview (${conf.name})\n${list}\nAre you sure (y/N)? `, (answer) => {
 
-    answer = (answer || '').trim().slice(0).toLowerCase();
+    answer = (answer || '').trim().charAt(0).toLowerCase();
 
     rl.close();
 
@@ -1006,21 +1049,340 @@ function render(conf, args, dest, done) {
 
       const copied = copyFiles(renderMap.copyFiles, args.force).success.length;
 
+
       let method = result.success.length > result.failed.length ? 'ok' : 'warn';
       method = !result.success.length ? 'error' : method;
 
       log[method](`Render finished - ${result.success.length} successful ${result.failed.length} failed ${copied} copied`);
 
-      log();
-      done();
+      const injectKeys = Object.keys(conf.injects);
 
+      if (!result.success.length && injectKeys.length) {
+        log.warn(`Aborting inject, templates failed to render`);
+        return finish();
+      }
+
+      if (conf.injects) {
+
+        for (const k in conf.injects) {
+          const _inject = conf.injects[k];
+          _inject.defaultName = renderMap.name;
+          args.silent = true;
+          inject(k, _inject, args);
+        }
+
+      }
+
+      finish();
+
+    }
+    else {
+      finish();
+    }
+
+  });
+
+}
+
+/**
+ * Compiles an action template for injection.
+ * 
+ * @param {object} conf the action configuration object.
+ * 
+ * @returns {{ compiled: string[], report: [string, string][]}}
+ */
+function compileActionTemplates(conf) {
+
+  if (!Array.isArray(conf.templates))
+    conf.templates = [conf.templates];
+
+  const report = [];
+
+  const compiled = conf.templates.map(v => {
+    const c = compileTemplate(v, conf.props);
+    report.push([v, c]);
+    return c;
+  });
+
+  return {
+    compiled,
+    report
+  };
+
+}
+
+/**
+ * Finds matching lines based on start & end expressions setting end as null for first empty line found after start matched.
+ * 
+ * @param {string[]} lines array of string split from target file.
+ * @param {string | RegExp} start the expression to find as inject start index.
+ * @param {string | RegExp | null} end the expression to find as inject end index.
+ * 
+ * @returns {InjectChunks}
+ */
+function findChunks(lines, start, end) {
+
+
+  // If not start position assume first line.
+  start = start || lines[0];
+
+  // Default to null which will look for empty line.
+  end = typeof end === 'undefined' ? null : end;
+
+  // If string convert to exp
+  if (typeof start === 'string')
+    start = new RegExp('^' + start);
+
+  if (typeof end === 'string')
+    end = new RegExp('^' + end);
+
+  if (!(start instanceof RegExp))
+    log.error(`Expected chunk start to be RegExp, but got typeof ${typeof start}`).exit();
+
+  if (!(end instanceof RegExp) && end !== null && end !== false)
+    log.error(`Expected chunk end to be RegExp, null or false, but got typeof ${typeof start}`).exit();
+
+
+  const result = lines.reduce((a, c, i) => {
+
+    if (a.started && a.ended)
+      a.after.push(c);
+
+    // If started check for inner chunks until end.
+    if (a.started && !a.ended) {
+
+      // Otherwise test expression.
+      if (end instanceof RegExp && end.test(c)) {
+        a.chunks.push(c);
+        a.ended = true;
+        a.endIdx = i;
+      }
+
+      // Checking for first empty line.
+      else if (end === null && c === '') {
+        a.chunks.push(c);
+        a.ended = true;
+        a.endEmpty = true; // indicate last line in chunks is empty line.
+        a.endIdx = i;
+      }
+
+      // We are replacing so the already found row just end.
+      else if (end === false) {
+        a.ended = true;
+        a.endIdx = Math.max(0, i - 1);
+      }
+
+      else {
+        a.chunks.push(c);
+      }
+
+    }
+
+    if (!a.started) {
+
+      // Otherwise test expression.
+      if (start instanceof RegExp && start.test(c)) {
+        a.chunks.push(c);
+        a.started = true;
+        a.startIdx = i;
+      }
+
+    }
+
+    if (!a.started)
+      a.before.push(c);
+
+
+    return a;
+
+  }, {
+      before: [],
+      after: [],
+      chunks: [],
+      started: false,
+      ended: false,
+      startIdx: null,
+      endIdx: null,
+      endEmpty: false
+    });
+
+  const { started, ended, ...cleaned } = result;
+
+  return cleaned;
+
+}
+
+/**
+ * Injects based on action configuration object.
+ * 
+ * @param {string[]} lines array of lines split from target file.
+ * @param {InjectAction} conf the inject action configuration object.
+ * 
+ * @returns {{ lines: string[], report: [string, string][] }}
+ */
+function injectAction(lines, conf) {
+
+  if (conf.strategy === 'replace')
+    conf.end = false;
+
+  // Breakout lines into chunks of lines before/after and found.
+  const parsed = findChunks(lines, conf.start, conf.end);
+
+  // Compile templates to inject.
+  const result = compileActionTemplates(conf);
+  const { compiled } = result;
+
+  switch (conf.strategy) {
+
+    // Inject BEFORE the first line in found chunks.
+    case 'beforeStart': {
+      parsed.chunks = [...compiled, ...(parsed.chunks)];
+      break;
+    }
+
+    // Inject AFTER the first line in found chunks.
+    case 'afterStart': {
+      const first = parsed.chunks.shift();
+      parsed.chunks = [first, ...compiled, ...(parsed.chunks)];
+      break;
+    }
+
+
+    // Inject BEFORE the last line in our found chunks.
+    case 'beforeEnd': {
+      let last = parsed.chunks.pop();
+      parsed.chunks = [...(parsed.chunks), ...compiled];
+      //if (!parsed.endEmpty)
+      parsed.chunks.push(last);
+
+      break;
+    }
+
+    // Inject AFTER the last line in our found chunks.
+    case 'afterEnd': {
+      if (parsed.endEmpty);
+      parsed.chunks.pop();
+      parsed.chunks = [...(parsed.chunks), ...compiled];
+      if (parsed.endEmpty)
+        parsed.chunks.push('');
+      break;
+    }
+
+    // Replace the found chunk throw error if more than one line found.
+    case 'replace': {
+      parsed.chunks = compiled;
+      break;
+    }
+
+  }
+
+  return {
+    lines: [...(parsed.before), ...(parsed.chunks), ...(parsed.after)],
+    report: result.report
+  };
+
+}
+
+/**
+ * Finds by expression and injects into file.
+ * 
+ * @param {string} name the name of the inject configuration.
+ * @param {InjectConfig} conf the inject configuration object.
+ * @param {object} args parsed command args containing props.
+ * @param {function} done callback when finished.
+ 
+ */
+function inject(name, conf, args, done) {
+
+  const origTarget = conf.target;
+
+  const rl = createReadInterface();
+  done = done || (_ => _);
+
+  const target = resolve(conf.target);
+
+  let lines = readFileSync(target, 'utf8').toString().split('\n');
+
+  let reports = {};
+  let modified = 0;
+
+  let injected = [...lines];
+
+  // Inject our templates and rebuild lines.
+  conf.actions.forEach(c => {
+
+    // Extend props from args.
+    c.props = { ...(args.props), ...(c.props) };
+
+    // Get default parent name from destination if name not already defined.
+    c.props.name = c.props.name || conf.defaultName;
+
+    const result = injectAction(lines, c);
+    lines = result.lines;
+    reports[c.start] = result.report;
+    modified += result.report.length;
+    injected = result.lines;
+  }, []);
+
+  // Build Table Preview //
+
+  const table = new Tablur({ width: 0 });
+
+  table.row(`Injected: ${origTarget}`).row();
+
+  for (const k in reports) {
+    const transforms = reports[k];
+    table.row([k]);
+    transforms.forEach(t => {
+      table.row([t[0], '>>', t[1], ''], { indent: 1 });
+    });
+  }
+
+  function complete() {
+    if (args.silent) {
+      backup(target);
+      writeFileSync(target, injected.join('\n'), 'utf8');
+      log.ok(`Injected ${name} successfully - modified ${modified} line(s)`);
+      done();
+    }
+  }
+
+  if (args.silent)
+    return complete();
+
+  // Prompt user with preview of action.
+
+  rl.question(`\nInject Preview (${name})\n${table.toString()}\nAre you sure (y/N)? `, (answer) => {
+    answer = (answer || '').trim().charAt(0).toLowerCase();
+    rl.close();
+    // If yes render the templates.
+    if (answer === 'y') {
+      complete();
     }
     else {
       log();
       done();
     }
-
   });
+}
+
+/**
+ * Backsup a file that is to be replaced or modified.
+ * 
+ * @param {string} path path to file to be copied.
+ */
+function backup(path) {
+  const ts = Date.now() + '-' + parse(path).base;
+  const dest = join(PATHS.backups, ts);
+  path = resolve(path);
+  if (existsSync(path)) {
+    log.info(`Backing up file ${relative(CWD, path)} >> backups/${parse(dest).base}`);
+    copySync(resolve(path), dest);
+    return {
+      from: path,
+      to: dest
+    };
+  }
 
 }
 
