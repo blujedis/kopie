@@ -1055,6 +1055,9 @@ function render(conf, args, dest, done) {
 
       log[method](`Render finished - ${result.success.length} successful ${result.failed.length} failed ${copied} copied`);
 
+      if (!conf.injects)
+        return finish();
+
       const injectKeys = Object.keys(conf.injects);
 
       if (!result.success.length && injectKeys.length) {
