@@ -31,6 +31,10 @@ const COMMANDS = {
   generate: {
     args: ['<name> [path]'],
     alias: ['gen', 'g']
+  },
+  restore: {
+    args: ['[id]'],
+    alias: ['rest', 'r']
   }
 };
 

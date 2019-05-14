@@ -12,6 +12,13 @@ const toFlags = (arr) => {
   return clone.map(toFlag);
 };
 
+const toTime = (epoch) => {
+  if (typeof epoch === 'string')
+    epoch = parseInt(epoch);
+  const d = new Date(epoch);
+  return d.toUTCString();
+};
+
 module.exports = function initHelp(kopie) {
 
   const config = kopie.config;
@@ -34,6 +41,7 @@ module.exports = function initHelp(kopie) {
   const initAlias = [COMMANDS.init.alias.join(', ')];
   const configAlias = [COMMANDS.config.alias.join(', ')];
   const genAlias = [COMMANDS.generate.alias.join(', ')];
+  const restAlias = [COMMANDS.restore.alias.join(', ')];
 
   // Option Aliases //
 
@@ -44,13 +52,12 @@ module.exports = function initHelp(kopie) {
 
   function show(key) {
 
-    const table = new Tablur({ width: 0 });
+    const table = new Tablur();
     const desc = `A scaffolding utility leveraging Handlebars template compiler and Handlebars-Helpers see: https://github.com/helpers/handlebars-helpers`;
 
     switch (key) {
 
       case 'main':
-
 
         table.clear();
 
@@ -58,7 +65,7 @@ module.exports = function initHelp(kopie) {
           .row()
           .row('Kopie Scaffolding Utility')
           .row()
-          .row(desc)
+          .row([desc], { width: 40 })
           .row()
           .row([`usage: ${baseUsage}`])
           .row()
@@ -66,10 +73,11 @@ module.exports = function initHelp(kopie) {
           .row([usages.init, `Initialize ${NAME}`, `alias: ${initAlias}`], { indent: 2 })
           .row([usages.config, `Displays sets or gets config properties`, `alias: ${configAlias}`], { indent: 2 })
           .row([usages.generate, `Generates a named component`, `alias: ${genAlias}`], { indent: 2 })
+          .row([usages.restore, `Restores a backup`, `alias: ${restAlias}`], { indent: 2 })
           .row()
           .row('Options:')
           .row([helpOpts, `--help or <command> --help`], { indent: 2 })
-          .row([purgeOpts, `purges unknown generators`], { indent: 2 })
+          .row([purgeOpts, `purges generators or restore points`], { indent: 2 })
           .row([forceOpts, `forces command action`], { indent: 2 })
           .row([silentOpts, `suppresses confirm previews`], { indent: 2 })
           .row();
@@ -139,6 +147,37 @@ module.exports = function initHelp(kopie) {
           const output = join(config.root || '.', conf.base || '');
           const type = conf.isDirectory ? 'directory' : 'file';
           table.row([conf.name, conf.description || '', output, type], { indent: 2 });
+        });
+
+        table
+          .row()
+          .render();
+
+        break;
+
+      case 'restore':
+
+        table.clear();
+
+        table
+          .row()
+          .row([usages.restore, `alias: ${restAlias}`])
+          .row()
+          .row('Description:')
+          .row(`Restores template(s) from backup`, { indent: 2 })
+          .row()
+          .row('Options:')
+          .row([purgeOpts, `purges restore point`], { indent: 2 })
+          .row()
+          .row('Restore Points:');
+
+        Object.keys(kopie.backups).reverse().forEach(k => {
+          const bkup = kopie.backups[k];
+          table.row();
+          table.row([k + ` (${toTime(k)})`], { indent: 2 });
+          bkup.items.forEach(item => {
+            table.row([item.to || 'DELETE', '>>', item.from], { indent: 4 });
+          });
         });
 
         table

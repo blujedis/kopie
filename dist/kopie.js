@@ -8,20 +8,22 @@ const Tablur = require('tablur').Tablur;
 const { relative, join, parse, resolve } = require('path');
 const readline = require('readline');
 const { writeFileSync, writeFile, copySync, existsSync,
-  readFileSync, ensureDirSync, readdirSync } = require('fs-extra');
+  readFileSync, ensureDirSync, readdirSync, unlinkSync } = require('fs-extra');
 const glob = require('fast-glob').sync;
 const log = require('./logger')();
 
 const { PKG, CWD, NAME, NAME_LOWER, KOPIE_PATH, BIN, PATHS, EXT } = require('./constants');
 const hasOwn = (o, k) => o.hasOwnProperty(k);
 
-let config, extExp;
+let config, extExp, backups;
 let ext = EXT;
 
 if (existsSync(PATHS.config)) {
   config = require(PATHS.config);
   ext = '.' + (config.ext || ext).replace(/^\./, '');
 }
+
+backups = getBackups();
 
 extExp = new RegExp(ext + '$');
 
@@ -46,6 +48,7 @@ const api = {
   extendConfig,
   pathToPropName,
   config,
+  backups,
   loadBlueprints,
   addGenerators,
   purgeGenerators,
@@ -63,7 +66,8 @@ const api = {
   compileTemplates,
   renderTemplate,
   renderTemplates,
-  render
+  render,
+  restore
 };
 
 /**
@@ -116,6 +120,18 @@ const api = {
  * 
  * @typedef {{ target: string, actions: InjectAction[] }} InjectConfig
  */
+
+/**
+*  Backup manifest item.
+* 
+* @typedef {{ from: string, to: string }} BackupManifestItem
+*/
+
+/**
+*  Backup manifest object.
+* 
+* @typedef {{ timestamp: number, items: BackupManifestItem[] }} BackupManifest
+*/
 
 // Handlebars Helpers 
 // --------------------------------------------- //
@@ -861,10 +877,11 @@ function compileTemplates(templates, context, options) {
  * @param {string} template the compiled template or file to write.
  * @param {string} dest the file path to output the template to.
  * @param {boolean} force when true overwrites file if exists.
+ * @param {BackupManifest} manifest manifest object for storing backups.
  * 
  * @returns {boolean}
  */
-function renderTemplate(template, dest, force) {
+function renderTemplate(template, dest, force, manifest) {
 
   const rel = relative(CWD, dest);
 
@@ -875,7 +892,7 @@ function renderTemplate(template, dest, force) {
   }
 
   try {
-    backup(dest);
+    backup(dest, manifest);
     writeToFile(dest, template);
     return true;
   }
@@ -891,16 +908,17 @@ function renderTemplate(template, dest, force) {
  * 
  * @param {string[]} templates array of compiled templates to be rendered.
  * @param {boolean} force when true overwrites template if exists.
+ * @param {BackupManifest} manifest manifest object for storing backups.
  * 
  * @returns {{ success: string[], failed: string[] }}
  */
-function renderTemplates(templates, force) {
+function renderTemplates(templates, force, manifest) {
 
   const success = [];
   const failed = [];
 
   templates.forEach(m => {
-    const rendered = renderTemplate(m.compiled, m.dest, force);
+    const rendered = renderTemplate(m.compiled, m.dest, force, manifest);
     if (rendered) success.push(m.destRel);
     else
       failed.push(m.destRel);
@@ -919,10 +937,11 @@ function renderTemplates(templates, force) {
  * @param {string} src source path of file to copy.
  * @param {string} dest the destination path.
  * @param {boolean} force when true overwrite existing files.
+ * @param {BackupManifest} manifest manifest object for storing backups.
  * 
  * @returns {{ success: string[], failed: string[] }}
  */
-function copyFile(src, dest, force) {
+function copyFile(src, dest, force, manifest) {
 
   const rel = relative(CWD, dest);
 
@@ -933,7 +952,8 @@ function copyFile(src, dest, force) {
   }
 
   try {
-    backup(src);
+    if (manifest)
+      backup(src, manifest);
     copySync(src, dest);
     return true;
   }
@@ -950,16 +970,17 @@ function copyFile(src, dest, force) {
  * @param {object[]} files array of copy files map.
  * @param {string} dest the directory to copy files to.
  * @param {boolean} force when true forces overwrite when exists.
+ * @param {BackupManifest} manifest manifest object for storing backups.
  * 
  * @returns {{ success: string[], failed: string[] }}
  */
-function copyFiles(files, force) {
+function copyFiles(files, force, manifest) {
 
   const success = [];
   const failed = [];
 
   files.forEach(m => {
-    const copied = copyFile(m.src, m.dest, force);
+    const copied = copyFile(m.src, m.dest, force, manifest);
     if (copied) success.push(m.destRel);
     else
       failed.push(m.destRel);
@@ -1004,6 +1025,29 @@ function renderPreview(renderMap) {
 }
 
 /**
+ * Gets the existing backup manifest.
+ */
+function getBackups() {
+  if (!existsSync(join(PATHS.kopie, 'backups.json')))
+    return {};
+  return JSON.parse(readFileSync(join(PATHS.kopie, 'backups.json')).toString());
+}
+
+/**
+ * Saves the manifest with optional extend.
+ * 
+ * @param {{ [key: string]: BackupManifest }} manifest 
+ * @param {BackupManifest} extend 
+ */
+function saveBackups(manifest, extend) {
+  if (extend) {
+    manifest = manifest || {};
+    manifest[extend.timestamp] = extend;
+  }
+  writeToFile(join(PATHS.kopie, 'backups.json'), JSON.stringify(manifest, null, 2));
+}
+
+/**
  * Verifies and prompts before render and write of templates.
  * 
  * @param {GeneratorConfig} conf generator configuration object.
@@ -1021,12 +1065,16 @@ function render(conf, args, dest, done) {
 
   // Create map of source/dest
   const renderMap = resolveTemplateMap(conf, dest);
-
   const list = '\n' + renderPreview(renderMap) + '\n';
+  const manifest = { timestamp: Date.now(), items: [] };
+  const currentBackups = api.backups;
 
   function finish() {
     log();
-    if (done) done();
+    if (manifest.items.length)
+      saveBackups(currentBackups, manifest);
+    if (done)
+      done();
     process.exit();
   }
 
@@ -1045,10 +1093,9 @@ function render(conf, args, dest, done) {
       const compiled = compileTemplates(renderMap.files, args.props);
 
       // Render the templates return success/fail result.
-      const result = renderTemplates(compiled, args.force);
+      const result = renderTemplates(compiled, args.force, manifest);
 
-      const copied = copyFiles(renderMap.copyFiles, args.force).success.length;
-
+      const copied = copyFiles(renderMap.copyFiles, args.force, manifest).success.length;
 
       let method = result.success.length > result.failed.length ? 'ok' : 'warn';
       method = !result.success.length ? 'error' : method;
@@ -1071,7 +1118,7 @@ function render(conf, args, dest, done) {
           const _inject = conf.injects[k];
           _inject.defaultName = renderMap.name;
           args.silent = true;
-          inject(k, _inject, args);
+          inject(k, _inject, args, null, manifest);
         }
 
       }
@@ -1293,9 +1340,9 @@ function injectAction(lines, conf) {
  * @param {InjectConfig} conf the inject configuration object.
  * @param {object} args parsed command args containing props.
  * @param {function} done callback when finished.
- 
+ * @param {BackupManifest} manifest manifest object for storing backups.
  */
-function inject(name, conf, args, done) {
+function inject(name, conf, args, done, manifest) {
 
   const origTarget = conf.target;
 
@@ -1342,12 +1389,11 @@ function inject(name, conf, args, done) {
   }
 
   function complete() {
-    if (args.silent) {
-      backup(target);
-      writeFileSync(target, injected.join('\n'), 'utf8');
-      log.ok(`Injected ${name} successfully - modified ${modified} line(s)`);
-      done();
-    }
+    if (manifest)
+      backup(target, manifest);
+    writeFileSync(target, injected.join('\n'), 'utf8');
+    log.ok(`Injected ${name} successfully - modified ${modified} line(s)`);
+    done();
   }
 
   if (args.silent)
@@ -1364,7 +1410,7 @@ function inject(name, conf, args, done) {
     }
     else {
       log();
-      done();
+      complete();
     }
   });
 }
@@ -1372,20 +1418,140 @@ function inject(name, conf, args, done) {
 /**
  * Backsup a file that is to be replaced or modified.
  * 
- * @param {string} path path to file to be copied.
+ * @param {string} path path the file is to be copied.
+ * @param {BackupManifest} manifest manifest object for storing backups.
  */
-function backup(path) {
-  const ts = Date.now() + '-' + parse(path).base;
-  const dest = join(PATHS.backups, ts);
+function backup(path, manifest) {
+
+  const ts = ((manifest && manifest.timestamp) || Date.now()) + '';
+  let base = join(PATHS.backups, ts);
+
   path = resolve(path);
+  const relPath = relative(CWD, path);
+  const dest = join(base, relPath);
+  const relDestPath = relative(CWD, dest);
+
+  const result = {
+    from: relPath,
+    to: ''
+  };
+
   if (existsSync(path)) {
-    log.info(`Backing up file ${relative(CWD, path)} >> backups/${parse(dest).base}`);
-    copySync(resolve(path), dest);
-    return {
-      from: path,
-      to: dest
-    };
+    log.info(`Backing up file ${relPath} >> ${relDestPath}`);
+    copySync(path, dest);
+    result.to = relDestPath;
+    if (manifest)
+      manifest.items.push(result);
+    return result;
   }
+  else {
+    if (manifest)
+      manifest.items.push(result);
+    return result;
+  }
+
+}
+
+/**
+ * Restores files from a backup.
+ * 
+ * @param {number} id the backup id to be restored.
+ * @param {boolean} purge when true purge the key from backups.json
+ */
+function restore(id, purge) {
+
+  const keys = Object.keys(backups);
+  const last = keys.pop();
+
+  const origId = id;
+  id = id || last;
+
+  if (!id)
+    log.error(`Cannot find restore point undefined`).exit();
+
+  if (purge) {
+    if (!backups[origId]) {
+      log.warn(`Failed to purge restore point ${id}, could NOT be found`).exit();
+    }
+    else {
+      delete backups[origId];
+      saveBackups(backups);
+      log.ok(`Removed restore point ${id} successfully`).exit();
+    }
+
+  }
+
+  const table = new Tablur();
+
+  table.row();
+  backups[id].items.forEach(item => {
+    table.row([item.to || 'DELETE', '>>', item.from], { indent: 2 });
+  });
+  table.row();
+
+  const rl = createReadInterface();
+
+  rl.question(`\nRestore Preview (${id})\n${table.toString()}\nAre you sure (y/N)? `, (answer) => {
+
+    answer = (answer || '').trim().charAt(0).toLowerCase();
+
+    rl.close();
+
+    if (answer !== 'y') {
+
+      log.warn(`Restore ${id} has aborted`).exit();
+
+    }
+    else {
+
+      const bkup = backups[id];
+      const failed = [];
+
+      if (!bkup || !bkup.items || !bkup.items.length) {
+        log.warn(`Purging empty restore point ${id}, nothing to do!`);
+        delete backups[id];
+        saveBackups(backups);
+        process.exit();
+      }
+
+      bkup.items.forEach(item => {
+
+        if (!item.to) {
+          try {
+            unlinkSync(resolve(item.from));
+            log.ok(`Deleted file ${item.from}`);
+          }
+          catch (ex) {
+            failed.push(item.from);
+            log.error(`Delete of ${item.form} failed: ${ex.message}`);
+          }
+        }
+
+        else {
+          try {
+            copySync(resolve(item.to), resolve(item.from));
+            log.ok(`Restored file ${item.to} to ${item.from}`);
+          }
+          catch (ex) {
+            failed.push(item.to);
+            log.error(`Restore of ${item.to} to ${item.from} failed: ${ex.message}`);
+          }
+        }
+
+      });
+
+      if (failed.length) {
+        log.error(`Restore point ${id} could NOT be fully restored, try again or purge the restore point`);
+      }
+      else {
+        delete backups[id];
+        saveBackups(backups);
+        log.ok(`Successfully restored ${id}`);
+      }
+
+    }
+
+  });
 
 }
 
